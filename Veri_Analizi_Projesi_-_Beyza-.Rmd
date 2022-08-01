@@ -1,0 +1,988 @@
+---
+title: "__*Veri Analizi Projesi*__"
+author: '*Beyza Memiş*'
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+### **1. Veri Tanımı**
+
+[](Resim1.png)
+
+
+
+Veri kümemiz temelde, ABD'nin çeşitli bölgelerindeki 1338 bireyden elde edilmiş bazı kişisel bilgileri sunar. Bu bağlamda 1338 gözlem ve 7 değişkenden oluşuyor. İlk olarak, değişkenlerimizi tanıyalım:
+
+**age:** Birincil yararlanıcının yaşı.
+
+**sex:** Sigorta müteahhidinin cinsiyeti.
+
+**bmi:** Vücut kitle indeksi. Bu değişken, yetişkin bir insanın kilosunun boyuna göre normal olup olmadığını gösteren bir parametredir. Boy ağırlık oranını kullanarak vücut ağırlığının objektif indeksini (kg / m \^ 2) hesaplar. İdeal vücut kitle indeksi 18,5 - 24,9 aralığındadır.
+
+[](Resim2.png)
+
+**children:** Sağlık sigortası kapsamındaki sahip olunan çocuk sayısı.
+
+**smoker:** Sigara kullananlar.
+
+**region:** Yararlanıcının ABD'deki yerleşim bölgesi (kuzeydoğu, güneydoğu, güneybatı, kuzeybatı).
+
+**charges:** Sağlık sigortası tarafından faturalanan bireysel tıbbi masraflar.
+
+### **2. Problemin Tanımı ve Amaçlar**
+
+Bu verideki amacımız Amerikanın çeşitli bölgelerinde yaşayan bir takım insanların yaş, cinsiyet, BMI (vücut kitle indeksi), çocuk sayıları, sigara içme durumları, bölgeleri ve tıbbi masraflarını göz önüne alarak bireysel tıbbi sigorta maliyetlerini tahmin etmektir.
+
+Tıbbi masraflar, yaralanma veya hastalığın önlenmesi veya tedavisi için yapılan masraflardır. Kar elde etmek için sigorta şirketleri, sigortalıya ödenen miktardan daha yüksek prim toplamalıdır. Bu nedenle, sigorta şirketleri bireysel tıbbi maliyetleri doğru bir şekilde tahmin etmek istiyor.
+
+Sağlık sigortası, bir kişinin veya kişilerin sağlık harcamalarını finanse etmek için bir araçtır. ABD'de insanların çoğunluğu, genellikle mevcut bir işveren aracılığıyla alınan özel sağlık sigortasına sahiptir ve azınlık, devlet destekli programlar tarafından kapsanmaktadır.
+
+Verimizde yaptığımız çeşitli analizler sonucunda sağlık sigortası yaptırmak isteyen kişinin sigorta maliyetlerini tahmin etmiş olacağız. Yapılan tahminlere göre sigorta şirketleri sigorta yaptırmak isteyen kişiden kar edebilmek amacıyla bir fiyatlandırma yapacaktır.
+
+### **3. Verilerin Toplanması**
+
+Veriler kaynak kitabına göre, ABD Sayım Bürosu'ndan alınan demografik istatistikler temelinde simüle edilmiştir.
+
+[](Resim3.png) Verideki gözlem sayımız 1338 olduğundan bu veriye ilişkin analizlerimize örneklem seçmeden devam edeceğiz.
+
+### **4. Verilerin Yapısı ve Niteliği**
+
+#### Öncelikle verimizi çağıralım.
+
+```{r,warning=FALSE, message=FALSE}
+library(readr)
+library(dplyr)
+library(VIM)
+library(ISLR)
+library(funModeling)
+library(ggplot2)
+library(moments)
+library(funModeling)
+```
+
+```{r}
+data <- read.csv("insurance.csv")
+data <- as.data.frame(data)
+head(data)
+```
+
+------------------------------------------------------------------------
+
+#### Değişkenlerin yapısını inceleyelim ve özet tanımlayıcı istatistiklere bakalım.
+
+```{r}
+str(data)
+```
+
+```{r}
+summary(data)
+```
+
+
+#### Kategorik değişkenleri faktör olarak tanımlayalım.
+
+```{r}
+data$smoker <- factor(data$smoker, levels=c("yes","no"))
+data$sex <- factor(data$sex, levels=c("female","male"))
+data$region <- factor(data$region, levels=c("southeast", "southwest", "northeast", "northwest"))
+```
+
+### **a)** Eksik Gözlem
+
+#### Eksik değer (missing data) var mı inceleyelim.
+
+```{r}
+data[which(is.na(data)),] 
+```
+
+#### Verimizde eksik gözlem bulunmuyor.
+
+#### Eksik gözlem varlığını şöyle de sorgulayabilirdik:
+ 
+```{r}
+colSums(is.na(data))
+```
+
+#### Verinin orijinal versiyonunu yedekliyoruz.
+
+```{r}
+data_org <- data
+```
+
+#### Eksik gözlem yok ancak biz random eksik gözlem oluşturarak o değerleri doldurmaya çalışacağız.
+
+```{r}
+data_miss<-data
+aa<-sample(1:nrow(data_miss),floor(nrow(data_miss)*0.05))
+data_miss$age[aa]<-NA
+
+```
+
+#### Yaş değişkeninde rastgele 66 tane NA oluştu.
+
+```{r}
+head(data_miss[which(is.na(data_miss)),])
+```
+
+#### Eksik gözlemlerin yapısını incelediğimizde age(yaş) değişkenindeki eksik gözlemlerin oranının %4,9 olduğunu görebiliriz.
+
+```{r}
+aggr(data_miss,col=c("lightgreen","pink"), numbers=TRUE, sortVars=TRUE, labels=names(data_miss),cex.axis=.7,gap=3,ylab=c("Missing Ratio","Missing Pattern"))
+```
+
+#### df_status fonksiyonu 0, NA ve sonsuz değerlerin miktar ve yüzdeliklerini verirken, aynı zamanda unique sütunuyla kaç farklı değerin olduğunu gösterir.
+
+#### Böylelikle çocuk sayısında(children) hiç çocuğu olmayanların sayısının 574 ve yüzdeliğinin %42.9, yaş(age) değişkeninde eksik gözlemlerin 66 ve yüzeliğinin %4.93 olduğunu görebiliriz.
+
+```{r}
+df_status(data_miss)
+```
+
+#### Şimdi eksik gözlemleri dolduruyoruz.
+
+#### **KNN (K-Nearest Neighbor)**
+
+```{r, warning=FALSE, message=FALSE}
+library(DMwR2)
+```
+
+```{r}
+data_knn <- data_miss
+knn_imp <- knnImputation(data_knn, k=5, meth="median")
+anyNA(knn_imp)
+```
+
+#### K-Nearest Neighbor algoritmasıyla boş gözlemleri doldurduk.
+
+#### KNN algoritması temelde öklid, manhattan uzaklığı gibi yöntemleri kullanarak veri noktaları arasındaki en yakın mesafeyi bulmaya dayanır. Veriler, en yakın mesafedeki verilerle birleşerek sınıflandırılır.
+
+```{r}
+a <- which(is.na(data_knn$age)) 
+a_knn <- knn_imp$age[a]
+a_knn
+```
+
+#### Orijinal verideki değerler:
+
+```{r}
+data_org$age[a]
+```
+
+```{r}
+summary(a_knn)
+```
+
+```{r}
+summary(data_org$age)
+```
+
+#### Yukarıda tahmin edilen Age değerleriyle orijinaldeki değerlerin temel istatistiklerinin yakın olduklarını görebiliriz.
+
+#### Bu noktadan sonra eksik gözlemler oluşturup doldurduğumuz veriyi bırakıp, analizimize orijinal veriden devam edeceğiz.
+
+```{r}
+glimpse(data)
+```
+
+### **b)** Aykırı Değerlerin İncelenmesi
+
+#### Genel olarak diğer gözlemlerden kayda değer derecede uzak olan gözlemlere aykırı veya uç değer diyoruz.
+
+#### Şimdi veri setimizdeki olası aykırı değerleri gözlemleyeceğiz.
+
+```{r}
+summary(data)
+```
+
+#### Temel tanımlayıcı istatistiklerde, verileri değişken bazında ele aldığımızda vücut kitle endeksinde 35 ve üstü değerlerin sağlık kalitesi açısından riskli grup olduğunu biliyorduk. Buradan kişilerin %25 civarının obezite riski taşıdığını görebiliriz.
+
+#### Bunun ötesinde büyük derecede obezite riski taşıyan kişilerin varlığı olası outlier değerlerimizdir. Fakat şu an ileri incelemelerimizde bize içgörü sunması için bu değerleri tutacağız.
+
+```{r}
+ggplot(data, aes(y=bmi))+
+  geom_boxplot()
+```
+
+#### Charges özelliğini incelediğimizde genelin dışında daha büyük sağlık harcamalarına sahip bazı kişilerin olduğunu görebiliriz. Hatta kutu grafiğinden bu değişkenin dağılımının sağa çarpık olduğunu söyleyebiliriz. Dağılımını bir de histogram ile inceleyelim.
+
+```{r}
+ggplot(data, aes(y=charges))+
+  geom_boxplot()
+```
+
+#### Histogramdan da gördüğümüz gibi charges'ın dağılımı sağa çarpık. İlerideki bölümlerde dönüşüm ve incelemelerle yeni görünümler ve anlamlar elde edeceğiz.
+
+```{r, message=FALSE}
+ggplot(data,aes(charges))+
+  geom_histogram( fill="gold",colour="black", alpha=0.7)
+```
+
+#### **Hampel Filter**
+
+#### Şimdi de 'charges'ı outlier tespitinde kullanılan diğer bir yöntem olan Hampel Filter yöntemi ile gözlemleyeceğiz.
+
+#### Hampel filtresi, ortanca mutlak sapma değerini kullanır.
+
+```{r}
+altsinir_bmi <- median(data$bmi) - 3 * mad(data$bmi, constant = 1)
+altsinir_bmi
+```
+
+```{r}
+ustsinir_bmi <- median(data$bmi) + 3 * mad(data$bmi, constant = 1)
+ustsinir_bmi
+```
+
+#### Aralığın dışındaki gözlemlerin satır numaraları.
+
+```{r}
+outlier_bmi <- which(data$bmi < altsinir_bmi | data$bmi > ustsinir_bmi)
+outlier_bmi
+```
+
+```{r}
+summary(data)
+```
+
+### **5. Eğitim ve Test Veri Kümelerinin Oluşturulması**
+
+#### Şimdi verimizi train/test olarak ayırıp iki ayrı excel dosyasında dışarı aktaracağız.
+
+```{r}
+set.seed(7357)
+trainIndex <- sample(1:nrow(data), size = round(0.8*nrow(data)), replace=FALSE)
+train<- data[trainIndex ,]
+test <- data[-trainIndex ,]
+```
+
+```{r}
+library("openxlsx")
+#write.xlsx(train, 'train.xlsx')
+#write.xlsx(test, 'test.xlsx')
+```
+
+#### Verinin train kısmında 1070 gözlem elde ettik.
+
+```{r}
+glimpse(train)
+```
+
+
+#### Yaş değişkenini age_cat değişkeni altında "Genç, Yetişkin, Yaşlı" olarak 3'e ayırdık.
+
+```{r}
+train$age_cat[train$age <=  35]  <- "Young Adult"
+train$age_cat[train$age >= 36 & train$age <=  55]  <- "Senior"
+train$age_cat[train$age >= 56] <- "Elder"
+
+train$age_cat <- as.factor(train$age_cat)
+```
+
+#### Vücut kitle indeksini (bmi) "Zayıf, Normal Kilo, Kilolu, Obez" olarak 4 gruba ayırdık. Yeni oluşan değişkene "weight_condition" ismini verdik.
+
+```{r}
+train$weight_condition[train$bmi<18.5] <- "Under Weight"
+train$weight_condition[train$bmi>=18.5 & train$bmi < 24.9] <- "Normal Weight"
+train$weight_condition[train$bmi >= 24.9 & train$bmi < 29.9] <- "Overweight"
+train$weight_condition[train$bmi >= 29.9] <- "Obese"
+
+train$weight_condition <- as.factor(train$weight_condition)
+```
+
+#### Charges'ın %10 kesilmiş ortalamaısını bulduk.
+
+```{r}
+avg_charge <- mean(train$charges, trim=0.1)
+avg_charge
+```
+
+#### Charges'ı "charge_status ismi altında "Ortalamanın altı" ve "Ortalamanın üstü" olarak ikiye ayırdık. Tabiki buradaki ortalamada kesilmiş ortalamayı baz aldık.
+
+```{r}
+train$charge_status[train$charges < avg_charge] <- "Below Average"
+train$charge_status[train$charges >= avg_charge] <- "Above Average"
+
+train$charge_status <- as.factor(train$charge_status)
+```
+
+#### Çocuk sayısını "Çocuğu var" ve "Çocuğu yok" olarak child_status değişkeninde depoladık.
+
+```{r}
+train$child_status[train$children <= 0] <- "Cocugu yok"
+train$child_status[train$children > 0] <- "Cocugu var"
+
+train$child_status <- as.factor(train$child_status)
+
+```
+
+
+### **6. Verilerin Açıklayıcı/Keşfedici Çözümlemesi**
+
+
+```{r}
+nrow(train)
+ncol(train)
+```
+
+
+#### Veri setimizdeki değişkenleri kategorize ederek toplamda 4 değişken daha elde ettik. Bu değişkenler ileri gözlemlerimizde bize daha yakından bilgi sağlayacaklar. Son durumda elimizde 11 değişken var.
+
+```{r}
+summary(train)
+```
+
+#### Kategorik özellikler açısından, veri setinde sigara içenler hariç her kategori için benzer sayıda kişi bulunmaktadır. Sigara içmeyenlerin sayısı ise sigara içenlerden 4 kat daha fazladır. Ortalama tıbbi maliyet 13.478 USD'dir ve medyan değeri 9575 USD'dir. 
+
+#### Verideki nicel verilerin incelenmesi
+```{r}
+profiling_num(train)
+```
+#### Verideki nicel değişkenler(age,bmi,children,charges) için ortalama, standart sapma, çarpıklık ve basıklık gibi bilgiler verilmiştir. 
+
+#### Verideki niceller üzerinden grafik incelemeleri
+```{r}
+plot_num(train)
+```
+
+
+#### age için: Yaş grafiğine baktığımızda neredeyse her yaş grubundan eşit dağıldığını(20li yaşlar ve 60 üstü hariç) fakat yaşı 60'tan büyük olan insanların sayı olarak daha az olduğunu, 20'li yaş grubunun daha çok olduğunu görebiliyoruz.
+
+#### bmi için: Grafiğe baktığımızda bmi değişkeninin normale benzer bi dağılımda olduğunu gözlemleyebiliyoruz. Dağılım olarak en çok 20-4- değerleri arasında dağılım gösterdiğini söyleyebiliriz.
+
+#### children için: Çocuk sayısı için baktığımızda çoğunluğun çocuğunun olmadığını ve 3'ten fazla çocuğu olan insanların çok az sayıda olduğunu görebiliyoruz.
+
+#### charges için: Bu grafikte ise tıbbi masrafların daha çok 0-200000 arasında olduğunu, 200000'den fazla olanların sayısının az olduğunu gözlemleyebiliyoruz.
+
+
+
+#### Bağımlı değişkenimiz olan charges için bir de histogramına bakalım.
+```{r}
+hist(train$charges, col = "lightpink")
+```
+
+
+#### Sağa çarpık dağılım.
+
+
+#### Verideki kategorik değişkenler üzerinden inceleme
+```{r}
+freq(train)
+```
+#### sex için: Cinsiyet frekans tablolarına baktığımızda dağılımın nerdeyse eşit olduğunu görebiliyoruz.
+
+#### smoker için: Sigara kullanımının grafiğine baktığımızda sigara kullanmayanların sayısının sigara kullananların sayısından neredeyse 4 kat fazla olduğunu görebiliyoruz.
+
+#### region için: Bölgeler için dağılıma baktığımızda neredeyse hepsinin eşit dağıldığını fakat southeast bölgesinin diğerlerine nazaran çok az daha fazla olduğunu görebiliyoruz.
+
+#### age_cat için: Bu grafiğe baktığımızda genç ve orta yaşlı insanların sayısının benzer olduğunu, yaşı daha büyük olan insanların ise daha az sayıda olduğunu görebiliyoruz.
+
+#### weight_condition için: Bu grafikte ise vücut kitle endeksine göre zayıf olanlardan obezite olanlara doğru gittiğinde neredeyse doğrusal sayılabilecek bir artış olduğunu gözlemleyebiliyoruz.
+
+#### charge_status için: Bu grafikte tıbbi masraf ücretleri az olanların tıbbi masraf ücretleri çok olanlara göre  daha çok olduğu ama aşırı bir fark olmadığını görebiliyoruz.
+
+#### child_status için: Bu grafikte çocuğu olan insanların çocuğu olmayan insanlara göre daha çok olduğu ama aşırı bir fark olmadığını görebiliyoruz.
+
+
+#### Charges - Region Kutu Grafiği
+
+```{r}
+ggplot(train, aes(x=region,y=charges, fill=region))+
+  geom_boxplot()+
+  labs(title="Bölgeler İçin Masraf Kutu Çizimi",
+       x="Bölge", y = "Masraf")+
+  scale_fill_discrete(name = "Bölge")+
+  stat_summary(fun = median, geom="line", group= 1, color= "black", size = 1) 
+
+```
+
+
+#### Tıbbi masrafların (charges) bölgelere göre kutu grafiğini incelediğimizde, güneydoğudaki masraf dağılımının diğerlerine göre daha geniş yayıldığını söyleyebiliriz. Güneybatıdaki dağılım daha dar olmakla birlikte uç değerlerin fazlalığından söz edebiliriz. 4 bölgenin dağılımı da sağa çarpıktır. 
+
+
+#### charges - smoker Kutu Grafiği
+
+```{r}
+ggplot(train, aes(x=smoker, y=charges, fill=smoker))+
+  geom_boxplot()+
+  labs(title="Sigara İçenler İçin Masraf Kutu Çizimi",
+       x="Sigara İçenler", y = "Masraf")+
+  scale_fill_discrete(name = "Sigara İçenler")+
+  stat_summary(fun = median, geom="line", group= 1, color= "black", size = 1) 
+
+```
+
+
+#### Sigara içenlerin sağlık sigortası tarafından verilen ücretlerde önemli bir fark yarattığı görülmektedir.
+
+
+#### Charges - Weight_condition Kutu Grafiği
+```{r}
+ggplot(train, aes(x=weight_condition, y=charges, fill=weight_condition))+
+  geom_boxplot()+
+  labs(title="Ağırlık Durumu İçin Masraf Kutu Çizimi",
+       x="Ağırlık Durumu", y = "Masraf")+
+  scale_fill_discrete(name = "Ağırlık Durumu")+
+  stat_summary(fun = median, geom="line", group= 1, color= "black", size = 1) 
+
+```
+
+
+#### İnsanların kilo durumu için baktığımızda obezite sorunu olanların daha çok tıbbi masraf yaptığını görebiliyoruz.
+
+
+#### Charges - Sex Kutu Grafiği
+```{r}
+ggplot(train, aes(x=sex, y=charges, fill=sex))+
+  geom_boxplot()+
+  labs(title="Cinsiyet İçin Masraf Kutu Çizimi",
+       x="Cinsiyet", y = "Masraf")+
+  scale_fill_discrete(name = "Cinsiyet")+
+  stat_summary(fun = median, geom="line", group= 1, color= "black", size = 1) 
+
+```
+
+
+#### Erkeklerin kadınlara göre daha çok tıbbi masraf yaptığı görülmektedir.
+
+#### Charges - Age Kutu Grafiği
+```{r}
+ggplot(train, aes(x=age_cat, y=charges, fill=age_cat))+
+  geom_boxplot()+
+  labs(title="Yaş Kategorileri İçin Masraf Kutu Çizimi",
+       x="Yaş Kategorileri", y = "Masraf")+
+  scale_fill_discrete(name = "Yaş Kategorileri")+
+  stat_summary(fun = median, geom="line", group= 1, color= "black", size = 1)
+```
+
+
+#### Yaş aralığı düştükçe tıbbi masraf ortanca çizgisinin doğrusal bir şekilde düştüğünü gözlemleyebiliyoruz.
+
+
+#### Charges - smoker Grafiği
+```{r}
+ggplot(data = train, aes(x = charges, fill = smoker)) + 
+  geom_density(alpha = 0.5) + 
+  ggtitle("Masraf'ın Sigara Durumuna Göre Dağılımı")
+```
+
+
+#### Yaşa göre bmi değerlerinin saçılım grafiğinin cinsiyetle ayrılımı
+```{r}
+ggplot(train, aes(age,bmi, color=sex, shape=sex))+
+  geom_point(size=3,alpha=0.6)
+```
+
+#### Genel olarak baktığımızda yaş ve bmi açısından cinsiyet kırılımında kadın ve erkeklerin homojen dağıldığını söyleyebiliriz.
+
+
+
+#### charges- age saçılım grafiği
+```{r}
+ggplot(train, aes(charges,age))+
+  geom_point(size=2,shape=21,stroke=1,color="dodgerblue1", fill="white")+
+  geom_smooth(method = "lm", col="darkblue",se = FALSE)
+```
+
+#### charges-bmi üzerinden cinsiyetle beraber saçılım grafiği
+```{r}
+library(plotly)
+d_plot <- ggplot(train, aes(bmi, charges, fill=sex, shape=sex)) +
+  geom_point(position = position_jitter(width= 0.2, height = 0), size = 2)
+
+ggplotly(d_plot)
+```
+#### Grafikte her bir noktaya fareyi getirdiğimizde o noktada olan değerin bmi, cinsiyet, ve tıbbi masrafını görebiliyoruz.
+
+
+#### Kabarcık çizimi(charges-bmi-age)
+```{r}
+library(ggplot2)
+ggplot(train, aes(bmi,charges, color=age, size=age))+
+  geom_point(alpha=0.5, stroke=2)+
+  scale_size(range = c(1, 8))+
+  scale_color_gradient(low = "blue", high = "lightpink")
+```
+
+
+#### KABARCIK ÇİZİMİ(bmi-charges-children)
+```{r}
+library(ggplot2)
+ggplot(train, aes(bmi,charges, color=children, size=children))+
+  geom_point(alpha=0.5, stroke=2)+
+  scale_size(range = c(1, 8))+
+  scale_color_gradient(low = "blue", high = "lightpink")
+```
+
+#### **İleri Düzey Grafik İncelemeleri**
+
+```{r}
+table <- xtabs(~sex+age_cat+smoker, data=train)
+ftable(table)
+```
+
+#### Cinsiyete göre yaş dağılımınlarının sigara içen ve içmeyenlerin sayıları.
+
+##### **Mozaik Çizimi**
+```{r}
+library(ggmosaic)
+ggplot(train) +
+  geom_mosaic(aes(x = product(sex, smoker), fill=sex)) +
+  labs(x = "Sigara ", title='f(Yas Kategorileri, Sigara| Cinsiyet)') + 
+  facet_grid(age_cat~.)
+```
+
+#### Tüm yaş kategorilerindeki kişilerde sigara içenlerin  çoğunluğunu erkeklerin oluşturduğunu görebiliriz.
+
+##### **Chernoff Yüzleri**
+```{r}
+library(aplpack)
+
+new_data<-train%>%
+  group_by(age_cat) %>%
+  dplyr::summarize(mean_charges = mean(charges),mean_bmi = mean(bmi),mean_age = mean(age))
+
+faces(new_data[,-1],  labels=as.character(new_data$age_cat))
+```
+
+#### Orta yaşlılarda ve gençlerde sağlık harcamalarının ortalaması daha düşük.
+#### Yaşlılarda vücut kitle endeksinin ortalaması en fazla.
+
+
+
+#### NOKTA ÖLÇÜLERİ
+```{r}
+
+n<-nrow(train)
+train_sorted <- train[order(train$charges),] 
+a<-(n/2)
+b<-(n/2)+1
+(train_sorted$charges[a]+train_sorted$charges[b])/2 
+median(train$charges)
+mean(train$charges)
+hist(train$charges)
+
+```
+
+#### "Ortanca < Ortalama" ise dağılım sağa çarpıktır. Ortalama değerimiz daha büyük olduğundan dağılımımız sağa çarpıktır. 
+
+
+
+#### DEĞİŞİM ÖLÇÜLERİ(charges için)
+```{r}
+stdev<-sd(train$charges)
+mean<-mean(train$charges)
+Degisim_kats_charges<-(stdev/mean)*100
+```
+#### Değişim katsayısı standart sapmanın ortalamaya göre yüzdesidir. 
+
+#### NOKTA ÖZETİ(charges için)
+```{r}
+quantile(train$charges) # Çeyrek değerler
+quantile(train$charges, c(.1,.9)) # Customized quantiles
+q1<-as.vector(quantile(train$charges,0.25))
+q3<-as.vector(quantile(train$charges,0.75))
+DAG<-q3-q1
+DAG
+genislik<-max(train$charges)-min(train$charges)
+genislik
+```
+#### Yukarıda grafiğe baktığımızda genişliği, çeyrek değerleri, DAG değerini görebiliyoruz.
+
+
+#### MAD(charges için)
+```{r}
+sort <- train[order(train$charges),]
+medianf<-median(sort$charges)
+sort$fmed<-abs(sort$charges-medianf)
+sort2 <- sort[order(sort$fmed),]
+mad<-median(sort2$fmed)
+```
+#### MAD değeri üyük olduğundan en azından bazı değerlerin ortalamadan uzakta 
+olduğu anlaşılır. 
+
+
+#### SAÇILIM MATRİSİ
+```{r}
+library(GGally)
+cor_train<-train[, c(1,3,7)]
+library(GGally)
+cor(cor_train)
+plot(cor_train)
+ggpairs(cor_train)
+```
+
+#### DÜZLEŞTİRİLMİŞ SAÇILIM MATRİSİ
+```{r}
+library(PerformanceAnalytics)
+chart.Correlation(cor_train, histogram=TRUE, pch=19)
+```
+
+#### ORTANCA İZİ ÇİZİMİ(charges-age için)
+```{r}
+ggplot(train, aes(x=age_cat,y=charges, fill=age_cat))+
+  geom_boxplot()+
+  stat_summary(fun = median, geom="line", group= 1, color= "black", size = 1)
+
+```
+
+
+
+
+#### ETKİLEŞİMLER(YAŞ VE CİNSİYET DEĞİŞKENİNİN BAĞIMLI DEĞİŞKENİMİZ OLAN CHARGES ÜZERİNDEN BİRLİKTE ETKİLEŞİMİ)
+
+```{r}
+etk_train<-train%>%
+  group_by(sex,age_cat)%>% 
+  summarise(Median=median(charges))
+etk_train
+
+ggplot(etk_train, aes(x = age_cat, y = Median,color=sex,group=sex)) +
+  geom_line() +
+  geom_point()
+```
+
+
+#### Kadın ve erkek olarak karşılaştırdığımızda aynı yaş gruplarının median değerlerinin birbirine aşırı yakın olduğunu görebiliyoruz.
+
+
+#### **Tıbbi Ücretlerin (Charges) İncelenmesi**
+
+
+#### Charges içib histogram grafiği
+```{r}
+ggplot(train,aes(charges))+
+  geom_histogram(aes(y=..density..), fill="white", color="black")+
+  geom_density(alpha=.4,fill="blue")
+```
+
+
+#### Charges değişkeninin histogram ve yoğunluk grafiğine baktığımızda dağılımının bariz sağa çarpık olduğunu görebiliyoruz. İleride dönüşüm gerekebilir. Kuyruk kısmından uç değer olabilirliğini de gördük. Aynı değişkenin Q-Q grafik çizimini de aşağıda görebiliriz. Q-Q grafiğinin de sağa çarpıklığı desteklediğini söyleyebiliriz.
+
+#### Charges Q-Q Çizimi
+```{r}
+library(ryouready)
+qqcharges <- qqnorm_spss(train$charges)
+ggplot(qqcharges)+
+  labs(title="Normal Q-Q Çizimi")+ 
+  theme(axis.title.x = element_text(color="black", face="bold", size=12),
+        axis.title.y = element_text(color="black", face="bold",size=12),
+        plot.title = element_text(hjust = 0.5,color="black", face="bold", size=14))
+
+```
+
+#### Aşağıda çarpıklık basıklık değerlerine baktığımızda da sağa çarpıklığı görebiliyoruz. 
+
+```{r}
+skewness(train$charges)
+```
+
+```{r}
+kurtosis(train$charges)
+```
+
+```{r}
+profiling_num(train$charges)
+```
+
+
+
+
+### **7. Birliktelik İstatistikleri**
+
+#### Değişkenlerin İkili Birliktelikleri
+
+```{r}
+dt1 <- table(train$charge_status,train$smoker)
+prop.table(dt1,2)
+round(100*prop.table(dt1,2),2)
+```
+#### Sütun yüzdelerine baktığımızda, tüm sigar kullananların ortalamanın üzerinde bir sağlık harcamasına tabi tutulduğunu görüyoruz. Bunun aksine, sigara içmeyenlerin yaklaşık %74'ü ise ortalamanın altında bir sağlık harcamasına sahip. Sigara içmekle, sağlık harcamaları arasında bir birliktelik olduğunu görebiliriz. 
+
+
+```{r}
+library(DescTools)      
+Assocs(dt1)[1:3,1]
+```
+#### Çeşitli birliktelik katsayılarına da baktığımızda değerlerin 1'e yakın, yani sigara ve sağlık harcaması arasında çok kuvvetli olmasa da belirli bir ölçüde yüksek bir birlikteliğin olduğunu görebiliriz.
+
+```{r}
+OR1 <- OddsRatio(dt1, conf.level=0.95)
+OR1
+```
+#### Sigara içenlerin, içmeyenlere göre daha çok sağlık harcaması yapma olasılığı yaklaşık 1322 kat daha fazladır.
+
+```{r}
+dt2 <- table(train$age_cat,train$smoker)
+round(100*prop.table(dt2,2),2)
+
+```
+#### Her yaş grubunda sigara içen/içmeyenlerin eşit dağıldığını, gençlerin nispeten çoğunluğunun sigara içtiğini görebiliriz. Yaş arttıkça sigara içme oranı düşüyor.
+
+```{r}
+Assocs(dt2)[1:3,1]
+```
+
+#### Sigara içme ve yaş arasında zayıf bir birliktelik söz konusu.
+
+```{r}
+dt3 <- table(train$charge_status,train$region)
+round(100*prop.table(dt3,2),2)
+```
+#### Bölgelere göre sağlık harcamalarında aşırı farklılıklar görülmüyor. Ancak, güneybatıdaki harcamaların %62 sinin ortalamanın altında olması da göze çarpıyor. Tüm bölgelerde harcamaların çoğunluğu ortalamanın altında.
+
+```{r}
+dt4<- table(train$charge_status,train$child_status)
+round(100*prop.table(dt4,2),2)
+```
+#### Çocuğu olanların %62.5 inin ve çocuğu olmayanların %52.91'inin ortalamanın altında sağlık harcamaları var.
+
+
+##### Aşağıda tüm kategorik değişkenlerimizin sıklık gösterimlerini tekrar hatırlayalım:
+```{r}
+
+library(inspectdf)
+train %>% inspect_types()
+tra_cat<-train %>% inspect_cat() 
+tra_cat$levels$hastalik
+tra_cat %>% show_plot()
+```
+
+### **8. Dönüşümler**
+
+
+#### Nicel Değişenlerimizin Dağılımlarına tekrar göz atalım.
+
+```{r}
+plot_num(train)
+```
+
+
+#### Sağlık harcamaları (charges) ve vücut kitle endeksi (bmi) değişkenlerimizin sağa çarpık dağıldığını biliyorduk.
+
+#### Charges'a Odaklanalım.
+
+#### BoxCox
+```{r}
+library(MASS)
+Box_charges<- boxcox(train$charges ~ 1,            
+                 lambda = seq(-6,6,0.1))      # Try values -6 to 6 by 0.1
+Cox_charges<- data.frame(Box_charges$x, Box_charges$y) 
+Cox_charges <- Cox_charges[order(-Cox_charges$Box_charges.y),]  
+Cox_charges[1,] 
+lambda <- Cox_charges[1, "Box_charges.x"]
+lambda
+```
+
+
+#### Box-Cox'ta lambda 0'a yakın bir değer çıktı. Charges değişkeni için log dönüşümü uygun olabilir. 
+
+
+```{r}
+min(train$charges)
+```
+
+
+#### Değişkende 0'lı veya negatif değerler yok. Log/karekök dönüşümlerini deneyelim. 
+
+```{r}
+train$charges_kok<-sqrt(train$charges) 
+hist(train$charges_kok)
+```
+
+
+#### Kök dönüşümü yaptığımızda normalleşmediğini görebiliriz.
+
+```{r}
+train$charges_log <- log10(train$charges)
+hist(train$charges_log)
+```
+
+
+#### log dönüşümü yaptığımızda normale yakınlaştığını görebiliriz.
+
+```{r}
+ggplot(train, aes(bmi,charges))+
+  geom_point()+
+  geom_smooth(method = "loess", col="red",se = FALSE)
+```
+
+```{r}
+g<-ggplot(train, aes(bmi,charges_log,label=rownames(train)))+
+  geom_point(size=0.90)
+
+g+geom_text(label=rownames(train),nudge_x=0.20,check_overlap=T,size=2.5)+
+  geom_smooth(method="loess",col="red",se=FALSE)
+
+
+```
+
+
+#Bmi ve Charges arasındaki, düzleştirme doğrusu düze yaklaştı.
+
+```{r}
+plot_num(train)
+```
+
+
+#### Age incelenmesi:
+```{r}
+hist(train$age)
+train$age_log <- log10(train$age)
+hist(train$age_log)
+```
+
+```{r}
+train$age_kok <- sqrt(train$age)
+hist(train$age_kok)
+```
+
+#### Yaş'ta iki dönüşümle de normale yakınlaşma olmadı. 
+
+```{r}
+ggplot(train, aes(age,charges))+
+  geom_point(size=1)+
+  geom_text(label=rownames(train),nudge_x=0.04,check_overlap=T,size=2.5)+
+  geom_smooth(method = "loess", col="darkblue",se = FALSE)
+```
+
+
+```{r}
+ggplot(train, aes(age,charges_log))+
+  geom_point(size=1)+
+  geom_text(label=rownames(train),nudge_x=0.04,check_overlap=T,size=2.5)+
+  geom_smooth(method = "loess", col="darkblue",se = FALSE)
+```
+
+
+#### Yaş ile Charges değişkeni arasında doğrusala yakın bir ilişki var.
+
+
+#### Yaşı Polinomiyal Merkezileştirme:
+```{r}
+mean_age<-mean(train$age)
+train$age_merk<-(train$age-mean_age)
+```
+
+#### Yaşı merkezileştirip karesel terimlerine bakma:
+```{r}
+ggplot(train, aes(x = age_merk, y =charges_log )) +
+  stat_smooth(method = "lm", se = FALSE, color = "green", formula = y ~ x) +
+  stat_smooth(method = "lm", se = FALSE, color = "blue", formula = y ~ x + I(x ^ 2)) +
+  stat_smooth(method = "lm", se = FALSE, color = "red", formula = y ~ x + I(x ^ 2)+ I(x ^ 3)) +
+  geom_point(colour = "black", size = 1)
+```
+
+
+#### Değişeni merkezileştirirsek fiziksel bağımlılığı elimine edebiliriz. Yeşil regresyon doğrusu noktaları en iyi temsil eden doğru gibi duruyor. Bir model kurarsam yaşı karesel terimsiz kullanabilirim...
+
+
+#### Bmi incelenmesi:
+```{r}
+Box_bmi<- boxcox(train$bmi ~ 1,            
+                 lambda = seq(-6,6,0.1))      # Try values -6 to 6 by 0.1
+Cox_bmi<- data.frame(Box_bmi$x, Box_bmi$y) 
+Cox_bmi <- Cox_bmi[order(-Cox_bmi$Box_bmi.y),]  
+Cox_bmi[1,] 
+lambda <- Cox_bmi[1, "Box_bmi.x"]
+lambda
+```
+```{r}
+library(rcompanion)
+bmi_tukey<- transformTukey(train$bmi, plotit=FALSE)
+```
+
+
+
+#### Lambda değerlerimiz 0.4 çıktı. Bu değer 0.5'e yakın olduğu için karekök dönüşümünün uygun olabileceği önerisini aldık.
+
+#### Bmi orijinal hali:
+```{r}
+hist(train$bmi)
+```
+
+#### Bmi log10 dönüştürülmüş hali:
+```{r}
+train$bmi_log<-log10(train$bmi) 
+hist(train$bmi_log)
+```
+
+#### Bmi kok dönüşümü hali:
+```{r}
+train$bmi_kok<-sqrt(train$bmi) #Age'de kok dönüsümü
+hist(train$bmi_kok)
+```
+
+#### Bmi'de Bazı Normallik testleri (a=0.05):
+
+#### Hipotez
+#### H0: Veri normal dağılıyor.
+#### H1: Veri normal değılmıyor. 
+
+#### Shapiro Wilk Testi
+```{r}
+library(fBasics)
+shapiro.test(train$bmi_log)
+```
+#### log dönüşümü için p değeri alfa(0.05) değerinden küçük olduğu için H0 hipotezini reddederiz. Log dönüşümlü Bmi (vücut kitle endeksi) normal dağılmaz.
+
+```{r}
+shapiro.test(train$bmi_kok)
+```
+#### Karekök dönüşümü için p değeri alfa(0.05) değerinden büyük olduğu için H0 hipotezi reddedilemez. Kök dönüşümlü bmi değişkeni normal dağılır. 
+
+
+#### Jarque-Bera Testi 
+```{r}
+jarqueberaTest(train$bmi_log)
+```
+#### Shapiro-Wilk testi gibi burada da H0 reddilir ve log dönüşümlü bmi normal dağılmaz.
+
+```{r}
+jarqueberaTest(train$bmi_kok)
+```
+#### Ve yine yukarıdaki gibi kök dönüşümünde H0 hipotezi p değeri= 0.31 değeriyle reddedilemez. Kök dönüşümlü Bmi normal dağılır.
+
+
+```{r}
+head(train)
+```
+
+```{r}
+orj<-train[,c(1,3,7)] 
+library(PerformanceAnalytics)
+chart.Correlation(orj, histogram=TRUE, pch=19, method="kendall")
+
+```
+
+```{r}
+transform_train<-train[,c(1,18,13)] 
+chart.Correlation(transform_train, histogram=TRUE, pch=19, method="kendall")
+```
+
+#### SONUC: Bağımlı ve nicel bağımsız değişkenler arasındaki ilişkiler lineere yaklaştı.
+
+
+### **11. Sonuç**
+
+Bu verideki amacımız Amerika'nın çeşitli bölgelerinde yaşayan bir takım insanların yaş, cinsiyet, BMI (vücut kitle indeksi), çocuk sayıları, sigara içme durumları, bölgeleri ve tıbbi masraflarını göz önüne alarak bireysel tıbbi sigorta maliyetlerini tahmin etmekti. Yaptığımız birçok analiz sonunda bazı gerçeklerle yüzleştik.
+Mesela sigara içenlerin her yıl tıbbi masrafları sigara içmeyenlere göre çok daha fazla. Bu durum da bize sigara içen insanların sağlık sorunlarının daha fazla olduğunu gösteriyor. Verisetindeki yaşlı insanların genç insanlara göre daha fazla olduğunu da yaptığımız analizlerde gözlemlemiş olduk. Obezite olan insanların da daha çok sağlık masrafı yaptığını inceledik. Bölgelere, cinsiyete, çocuk sayılarına göre çok bir farklılık olmasa da yaşın, sigara içme durumunun, vücut kitle endeksinin tıbbi sağlık maliyetlerinde büyük fark yarattığını, sağlığımız için yaşımızın ilerlemesine engel olamasak da vücut kitle endeksimizi normal tutup sigara kullanımını sonlandırabiliriz...
+
+
+
+
+### **12. Kaynakça**
+
+● <https://kolanobezitemerkezi.com/vucut-kitle-indeksi/>
+
+● <https://www.kaggle.com/datasets/mirichoi0218/insurance?datasetId=13720&sortBy=voteCount>
+
+● <https://www.kaggle.com/code/tugrulyilmaz/kural-tabanli-siniflandirma>
+
+● [https://medium.com/\@bugcekrpi.1/r-markdown-bi%C3%A7imlendirme-c5fd4eb445ed](https://medium.com/@bugcekrpi.1/r-markdown-bi%C3%A7imlendirme-c5fd4eb445ed){.uri}
+
+● <https://ravenfo.com/2021/02/11/aykiri-deger-analizi/>
